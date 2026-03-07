@@ -22,4 +22,4 @@ SULTANASSETS/
 UtamaAI/Assets/Video/Generated*
 
 # Local secrets
-UtamaAI/UtamaAI/Config/LocalSecrets.swift
+UtamaAI/Config/LocalSecrets.swift
