@@ -658,6 +658,38 @@ The lion is NOT powered by a separate Gemini session. It is a scripted entity:
 
 Each task is self-contained and can be picked up by an independent agent. Tasks reference their dependencies explicitly.
 
+### 9.0 Implementation Snapshot (7 March 2026)
+
+This snapshot captures actual repository state after executing Track A + B + C first, while intentionally deferring Agent 3 scope (Assets/VR/UI full implementation).
+
+| Task | Status | Notes |
+|------|--------|-------|
+| T-A01 | Completed | `UtamaAI.xcodeproj` created, iOS target added, Info.plist permissions set, folder scaffold created. |
+| T-A02 | Completed | `AppCoordinator` state machine and transition methods implemented. |
+| T-A03 | Completed | `ARSceneManager` with plane detection, coaching overlay, auto/tap placement implemented. |
+| T-A04 | Completed | `CharacterManager` load/place/animation APIs with graceful fallbacks implemented. |
+| T-A05 | Completed | `ContentView` integrates AR + overlays with state-driven visibility. |
+| T-B01 | Completed | Gemini WebSocket client implemented with setup, parsing, retry/timeout handling. |
+| T-B02 | Completed | Microphone capture pipeline with 16k mono PCM conversion implemented. |
+| T-B03 | Completed | Streaming audio playback + amplitude callback implemented. |
+| T-B04 | Completed | End-to-end voice pipeline integrated in `AppCoordinator` (`mic -> Gemini -> speaker`). |
+| T-B05 | Completed | Character prompt/persona + model/voice config + API key accessor implemented. |
+| T-C01 | Completed | Amplitude-to-animation sync manager implemented (threshold + debounce). |
+| T-C02 | Completed | Character spawn/materialization effect implemented in `CharacterManager`. |
+| T-C03 | Completed | Camera-facing behavior implemented (initial + periodic smooth yaw update). |
+| T-D* / T-E* / T-F* | Deferred by design | Agent 3 scope was explicitly excluded in this pass. `VRScenePlayer` remains stubbed. |
+| T-G* | Not started | Integration/performance/rehearsal tasks pending after D/E/F completion. |
+
+**Build/validation result (simulator)**  
+- `xcodebuild -project UtamaAI.xcodeproj -scheme UtamaAI -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' CODE_SIGNING_ALLOWED=NO build` -> **BUILD SUCCEEDED**  
+- Runtime crash in `AudioStreamPlayer` (`NSException` from AVAudioEngine format mismatch) was fixed.
+
+**Current blocker (physical device testing)**  
+- Device is on iOS `26.1`, but local Xcode is `15.4`.  
+- Deployment to device is blocked with developer image mismatch (`kAMDMobileImageMounterPersonalizedBundleMissingVariantError`).  
+- Next engineer must install/select an Xcode version that supports the connected iOS version before on-device validation.
+- Detailed continuation instructions are documented in `HANDOFF.md`.
+
 ### TRACK A: iOS App Foundation
 
 ---
