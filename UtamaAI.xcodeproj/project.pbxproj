@@ -19,6 +19,7 @@
 		5191971CE87051375567F378 /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7213CC353F13B5EE5405F1 /* AppCoordinator.swift */; };
 		68A149A542ADE4DB3223FBBE /* SubtitleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877D50F9C0FC0E809A35C5E9 /* SubtitleView.swift */; };
 		6F2EED3AF33F4E9EDFF66BCB /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD907DE56BBBF1052E48676 /* ContentView.swift */; };
+		819F344DF0F703E24DB83D2A /* VRSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2783BDE970F887639197D0E3 /* VRSceneView.swift */; };
 		88BE7DE570936F58A4D1AD63 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 56DB1A6D8E6D7317C3BD0466 /* Assets.xcassets */; };
 		8BFA7E5BEEE8DF8CE65FB8FF /* Assets in Resources */ = {isa = PBXBuildFile; fileRef = 7265EB6CB4D219934929CECC /* Assets */; };
 		9A692C5B367D43C6DC26BB70 /* CharacterPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70407DC57C74AFDDA4BFB06E /* CharacterPrompts.swift */; };
@@ -29,6 +30,7 @@
 
 /* Begin PBXFileReference section */
 		20BEFBD3752D6B9FB34061CB /* UtamaAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UtamaAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2783BDE970F887639197D0E3 /* VRSceneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VRSceneView.swift; sourceTree = "<group>"; };
 		35AF9F970648FCF297450268 /* AudioStreamPlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioStreamPlayer.swift; sourceTree = "<group>"; };
 		38C8CE89F2DB9ECD7D3A6C75 /* ARViewContainer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ARViewContainer.swift; sourceTree = "<group>"; };
 		4B7213CC353F13B5EE5405F1 /* AppCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				58179688CFF233445CC5CDDA /* VRScenePlayer.swift */,
+				2783BDE970F887639197D0E3 /* VRSceneView.swift */,
 			);
 			path = VR;
 			sourceTree = "<group>";
@@ -214,7 +217,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					9845FA9B51BAC12FA15B8FAA = {
-						DevelopmentTeam = 6NJ4R8FA37;
+						DevelopmentTeam = 6Q5U777U5J;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -269,6 +272,7 @@
 				0029C5762919ED757AA8240D /* AudioCaptureEngine.swift in Sources */,
 				105BA5E93C3D96D49BCF0C5A /* AudioStreamPlayer.swift in Sources */,
 				4745FEAAD53495A51036F849 /* GeminiLiveSession.swift in Sources */,
+				819F344DF0F703E24DB83D2A /* VRSceneView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,12 +285,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 6NJ4R8FA37;
+				DEVELOPMENT_TEAM = 6Q5U777U5J;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = UtamaAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.utama.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.utama.ai.demo;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -299,12 +303,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 6NJ4R8FA37;
+				DEVELOPMENT_TEAM = 6Q5U777U5J;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = UtamaAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.utama.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.utama.ai.demo;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

@@ -3,6 +3,8 @@ import SwiftUI
 struct MicIndicatorView: View {
     let state: MicIndicatorState
     let isConnected: Bool
+    let isMuted: Bool
+    let onTap: () -> Void
 
     @State private var pulse = false
 
@@ -33,12 +35,17 @@ struct MicIndicatorView: View {
                 .fill(isConnected ? Color.green : Color.red)
                 .frame(width: 12, height: 12)
         }
+        .contentShape(Circle())
+        .onTapGesture(perform: onTap)
         .onAppear {
             pulse = true
         }
     }
 
     private var baseColor: Color {
+        if isMuted {
+            return .gray
+        }
         switch state {
         case .idle:
             return .gray
@@ -50,6 +57,9 @@ struct MicIndicatorView: View {
     }
 
     private var iconName: String {
+        if isMuted {
+            return "mic.slash.fill"
+        }
         switch state {
         case .idle, .listening:
             return "mic.fill"

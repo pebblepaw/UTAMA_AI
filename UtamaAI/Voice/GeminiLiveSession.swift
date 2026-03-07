@@ -15,7 +15,7 @@ final class GeminiLiveSession: NSObject {
 
     let apiKey: String
 
-    private let urlSession: URLSession
+    private var urlSession: URLSession
     private let workQueue = DispatchQueue(label: "com.utama.voice.gemini.session")
 
     private var webSocket: URLSessionWebSocketTask?
@@ -23,24 +23,26 @@ final class GeminiLiveSession: NSObject {
     private var retryCount = 0
     private var didDisconnectManually = false
     private var timeoutWorkItem: DispatchWorkItem?
+    private var reconnectWorkItem: DispatchWorkItem?
 
     private let maxRetries = 3
     private let idleTimeoutSeconds: TimeInterval = 20
 
     init(apiKey: String) {
         self.apiKey = apiKey
+        urlSession = URLSession.shared // temporary; replaced after super.init()
+        super.init()
 
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
-        urlSession = URLSession(configuration: config)
-
-        super.init()
+        urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
 
     func connect(persona: CharacterPersona) {
         workQueue.async {
             self.activePersona = persona
             self.didDisconnectManually = false
+            self.cancelReconnect()
             self.openSocket()
         }
     }
@@ -50,17 +52,18 @@ final class GeminiLiveSession: NSObject {
             self.didDisconnectManually = true
             self.retryCount = 0
             self.invalidateTimeoutWatcher()
+            self.cancelReconnect()
             self.closeCurrentSocket(with: nil)
         }
     }
 
     func sendAudio(_ pcmData: Data) {
         let payload: [String: Any] = [
-            "realtime_input": [
-                "media_chunks": [[
-                    "mime_type": "audio/pcm;rate=16000",
+            "realtimeInput": [
+                "audio": [
+                    "mimeType": "audio/pcm;rate=16000",
                     "data": pcmData.base64EncodedString()
-                ]]
+                ]
             ]
         ]
 
@@ -69,12 +72,12 @@ final class GeminiLiveSession: NSObject {
 
     func sendText(_ text: String) {
         let payload: [String: Any] = [
-            "client_content": [
+            "clientContent": [
                 "turns": [[
                     "role": "user",
                     "parts": [["text": text]]
                 ]],
-                "turn_complete": true
+                "turnComplete": true
             ]
         ]
 
@@ -82,19 +85,25 @@ final class GeminiLiveSession: NSObject {
     }
 
     private func openSocket() {
+        guard webSocket == nil else { return }
+
         guard !apiKey.isEmpty else {
             notifyDisconnect(error: GeminiLiveError.missingAPIKey)
             return
         }
 
-        guard let persona = activePersona else {
+        guard activePersona != nil else {
             notifyDisconnect(error: GeminiLiveError.noPersonaConfigured)
             return
         }
 
-        let endpoint = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=\(apiKey)"
+        var components = URLComponents()
+        components.scheme = "wss"
+        components.host = "generativelanguage.googleapis.com"
+        components.path = "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
 
-        guard let url = URL(string: endpoint) else {
+        guard let url = components.url else {
             notifyDisconnect(error: GeminiLiveError.invalidURL)
             return
         }
@@ -102,10 +111,8 @@ final class GeminiLiveSession: NSObject {
         let task = urlSession.webSocketTask(with: url)
         webSocket = task
         task.resume()
-
-        sendSetupMessage(persona: persona)
-        startReceiveLoop()
-        scheduleTimeoutWatcher()
+        // Setup message + receive loop start in URLSessionWebSocketDelegate.didOpenWithProtocol
+        print("[GeminiLive] WebSocket task resumed, waiting for connection...")
     }
 
     private func closeCurrentSocket(with error: Error?) {
@@ -122,24 +129,24 @@ final class GeminiLiveSession: NSObject {
         let payload: [String: Any] = [
             "setup": [
                 "model": persona.modelId,
-                "generation_config": [
-                    "response_modalities": ["AUDIO"],
-                    "speech_config": [
-                        "voice_config": [
-                            "prebuilt_voice_config": ["voice_name": persona.voiceName]
+                "generationConfig": [
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": [
+                        "voiceConfig": [
+                            "prebuiltVoiceConfig": ["voiceName": persona.voiceName]
                         ]
-                    ],
-                    "output_audio_transcription": [:],
-                    "input_audio_transcription": [:]
+                    ]
                 ],
-                "system_instruction": [
+                "inputAudioTranscription": [:],
+                "outputAudioTranscription": [:],
+                "systemInstruction": [
                     "parts": [["text": persona.systemPrompt]]
                 ],
-                "realtime_input_config": [
-                    "automatic_activity_detection": [
+                "realtimeInputConfig": [
+                    "automaticActivityDetection": [
                         "disabled": false,
-                        "start_of_speech_sensitivity": "START_SENSITIVITY_HIGH",
-                        "end_of_speech_sensitivity": "END_SENSITIVITY_LOW"
+                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW"
                     ]
                 ]
             ]
@@ -154,7 +161,11 @@ final class GeminiLiveSession: NSObject {
 
             do {
                 let data = try JSONSerialization.data(withJSONObject: jsonPayload)
-                webSocket.send(.data(data)) { [weak self] error in
+                guard let message = String(data: data, encoding: .utf8) else {
+                    self.handleSocketFailure(GeminiLiveError.invalidPayloadEncoding)
+                    return
+                }
+                webSocket.send(.string(message)) { [weak self] error in
                     guard let self else { return }
                     if let error {
                         self.handleSocketFailure(error)
@@ -278,19 +289,22 @@ final class GeminiLiveSession: NSObject {
             self.invalidateTimeoutWatcher()
 
             guard !self.didDisconnectManually else {
+                self.cancelReconnect()
                 self.closeCurrentSocket(with: nil)
                 return
             }
+
+            // Ignore duplicate failure callbacks once the socket is already torn down.
+            guard self.webSocket != nil || self.isConnected else { return }
 
             if self.retryCount < self.maxRetries {
                 self.retryCount += 1
                 self.closeCurrentSocket(with: nil)
 
                 let retryDelay = TimeInterval(self.retryCount)
-                self.workQueue.asyncAfter(deadline: .now() + retryDelay) {
-                    self.openSocket()
-                }
+                self.scheduleReconnect(after: retryDelay)
             } else {
+                self.cancelReconnect()
                 self.closeCurrentSocket(with: error)
             }
         }
@@ -313,9 +327,68 @@ final class GeminiLiveSession: NSObject {
         timeoutWorkItem = nil
     }
 
+    private func scheduleReconnect(after delay: TimeInterval) {
+        cancelReconnect()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.openSocket()
+        }
+        reconnectWorkItem = workItem
+        workQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func cancelReconnect() {
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+    }
+
     private func notifyDisconnect(error: Error?) {
         DispatchQueue.main.async {
             self.delegate?.sessionDidDisconnect(error: error)
+        }
+    }
+}
+
+// MARK: - URLSessionWebSocketDelegate
+
+extension GeminiLiveSession: URLSessionWebSocketDelegate {
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        guard webSocketTask == webSocket else { return }
+        print("[GeminiLive] WebSocket connected")
+        workQueue.async {
+            guard let persona = self.activePersona else { return }
+            self.cancelReconnect()
+            self.sendSetupMessage(persona: persona)
+            self.startReceiveLoop()
+            self.scheduleTimeoutWatcher()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        guard webSocketTask == webSocket else { return }
+        print("[GeminiLive] WebSocket closed: \(closeCode)")
+        workQueue.async {
+            if !self.didDisconnectManually {
+                self.handleSocketFailure(GeminiLiveError.timeout)
+            }
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            print("[GeminiLive] Task failed: \(error.localizedDescription)")
+            workQueue.async {
+                self.handleSocketFailure(error)
+            }
         }
     }
 }
@@ -324,6 +397,7 @@ enum GeminiLiveError: LocalizedError {
     case missingAPIKey
     case noPersonaConfigured
     case invalidURL
+    case invalidPayloadEncoding
     case timeout
 
     var errorDescription: String? {
@@ -334,6 +408,8 @@ enum GeminiLiveError: LocalizedError {
             return "No character persona was configured before connecting."
         case .invalidURL:
             return "Invalid Gemini Live WebSocket URL."
+        case .invalidPayloadEncoding:
+            return "Failed to encode Gemini payload."
         case .timeout:
             return "Gemini Live session timed out."
         }

@@ -658,37 +658,61 @@ The lion is NOT powered by a separate Gemini session. It is a scripted entity:
 
 Each task is self-contained and can be picked up by an independent agent. Tasks reference their dependencies explicitly.
 
-### 9.0 Implementation Snapshot (7 March 2026)
+### 9.0 Implementation Snapshot (7 March 2026 — Evening Update)
 
-This snapshot captures actual repository state after executing Track A + B + C first, while intentionally deferring Agent 3 scope (Assets/VR/UI full implementation).
+This snapshot captures actual repository state after three engineering passes:
+- **Pass 1** (Agent 1+2): Track A + B + C code implementation.
+- **Pass 2** (Agent 3 / Copilot): Track D + E + F (assets, VR, transitions, multi-animation system).
+- **Pass 3** (Agent 3 / Copilot): Bug fixes for device runtime issues (Entity loading, WebSocket timing, audio session).
+
+**All assets are placed. All code is implemented. Simulator builds clean (zero warnings).**
 
 | Task | Status | Notes |
 |------|--------|-------|
-| T-A01 | Completed | `UtamaAI.xcodeproj` created, iOS target added, Info.plist permissions set, folder scaffold created. |
-| T-A02 | Completed | `AppCoordinator` state machine and transition methods implemented. |
-| T-A03 | Completed | `ARSceneManager` with plane detection, coaching overlay, auto/tap placement implemented. |
-| T-A04 | Completed | `CharacterManager` load/place/animation APIs with graceful fallbacks implemented. |
-| T-A05 | Completed | `ContentView` integrates AR + overlays with state-driven visibility. |
-| T-B01 | Completed | Gemini WebSocket client implemented with setup, parsing, retry/timeout handling. |
-| T-B02 | Completed | Microphone capture pipeline with 16k mono PCM conversion implemented. |
-| T-B03 | Completed | Streaming audio playback + amplitude callback implemented. |
-| T-B04 | Completed | End-to-end voice pipeline integrated in `AppCoordinator` (`mic -> Gemini -> speaker`). |
-| T-B05 | Completed | Character prompt/persona + model/voice config + API key accessor implemented. |
-| T-C01 | Completed | Amplitude-to-animation sync manager implemented (threshold + debounce). |
-| T-C02 | Completed | Character spawn/materialization effect implemented in `CharacterManager`. |
-| T-C03 | Completed | Camera-facing behavior implemented (initial + periodic smooth yaw update). |
-| T-D* / T-E* / T-F* | Deferred by design | Agent 3 scope was explicitly excluded in this pass. `VRScenePlayer` remains stubbed. |
-| T-G* | Not started | Integration/performance/rehearsal tasks pending after D/E/F completion. |
+| T-A01 | **Completed** | `UtamaAI.xcodeproj` created, iOS target added, Info.plist permissions set, folder scaffold created. |
+| T-A02 | **Completed** | `AppCoordinator` state machine with VR transitions, audio pipeline management. |
+| T-A03 | **Completed** | `ARSceneManager` with plane detection, coaching overlay, auto/tap placement. |
+| T-A04 | **Completed** | `CharacterManager` with multi-animation USDZ loading, Entity.load() scene graph, spawn effects. |
+| T-A05 | **Completed** | `ContentView` integrates AR + VR layers + fade-to-black transitions + error banner. |
+| T-B01 | **Completed** | Gemini WebSocket client with URLSessionWebSocketDelegate for proper connection sequencing. |
+| T-B02 | **Completed** | Microphone capture pipeline with 16k mono PCM conversion. |
+| T-B03 | **Completed** | Streaming audio playback + amplitude callback. |
+| T-B04 | **Completed** | End-to-end voice pipeline in `AppCoordinator` (mic → Gemini → speaker). |
+| T-B05 | **Completed** | Character prompt/persona + model/voice config + API key with hardcoded fallback. |
+| T-C01 | **Completed** | Amplitude-to-animation sync manager (threshold + debounce). |
+| T-C02 | **Completed** | Character spawn/materialization effect (scale-up + SFX). |
+| T-C03 | **Completed** | Camera-facing behavior (initial + periodic smooth yaw update). |
+| T-D01 | **Completed** | `VRScenePlayer` with AVPlayer, preload, play/stop, completion callback. |
+| T-D02 | **Completed** | AR↔VR transitions with fade-to-black overlay, whoosh SFX, state machine. |
+| T-E01 | **Completed** | `SubtitleView` with fade-in/out, semi-transparent pill background. |
+| T-E02 | **Completed** | `MicIndicatorView` with listening/speaking/idle states + connection indicator. |
+| T-E03 | **Completed** | Placement instructions with title and coaching text. |
+| T-F01 | **Completed** | Sultan 3D model (CGTrader) → Mixamo rigging → Blender USDZ export → `utama.usdz` (29MB). |
+| T-F02 | **Completed** | Lion 3D model (CGTrader, pre-rigged) → Blender USDZ export → `lion.usdz` (14MB). |
+| T-F03 | **Completed** | Audio SFX sourced: lion_roar.wav (3.6s), ambient_shore.wav (6m), spawn_shimmer.wav (2.7s), transition_whoosh.wav (5.2s). |
+| T-F04 | **Completed** | VR video generated with Veo 3.1 → `lion_encounter_vr.mp4` (35MB, 1080p, 14.6s). |
+| T-G01 | **BLOCKED — 3 runtime bugs** | Device build works. Three runtime bugs need fixing before end-to-end test passes. See HANDOFF.md. |
+| T-G02 | **Not started** | VR transition test — pending T-G01 bug fixes. |
+| T-G03 | **Not started** | Demo rehearsal — pending T-G01 + T-G02. |
+| T-G04 | **Not started** | Build for demo device — pending T-G03. |
 
-**Build/validation result (simulator)**  
-- `xcodebuild -project UtamaAI.xcodeproj -scheme UtamaAI -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' CODE_SIGNING_ALLOWED=NO build` -> **BUILD SUCCEEDED**  
-- Runtime crash in `AudioStreamPlayer` (`NSException` from AVAudioEngine format mismatch) was fixed.
+**Build environment:**
+- Xcode 26.3 (Build 17C529), iOS SDK 26.2
+- Simulator: iPhone 17 @ iOS 26.3.1 — **BUILD SUCCEEDED** (zero warnings)
+- Device: iPhone "Pebble" @ iOS 26.2 — builds and installs, but 3 runtime bugs
 
-**Current blocker (physical device testing)**  
-- Device is on iOS `26.1`, but local Xcode is `15.4`.  
-- Deployment to device is blocked with developer image mismatch (`kAMDMobileImageMounterPersonalizedBundleMissingVariantError`).  
-- Next engineer must install/select an Xcode version that supports the connected iOS version before on-device validation.
-- Detailed continuation instructions are documented in `HANDOFF.md`.
+**Current blockers (3 runtime bugs on device — see HANDOFF.md for details):**
+1. **Sultan model invisible** — `CharacterManager` loads via `Entity.load(contentsOf:)` but Sultan entity may have scene graph issues (possibly the Entity children don't contain visible mesh, or subdirectory path isn't found at runtime on device).
+2. **Lion oriented head-down** — Lion model renders but is rotated ~90° with head pointing into the ground. Root transform or axis conversion issue in the USDZ scene graph.
+3. **Gemini WebSocket timeout** — "Gemini Live session timed out" error. The `URLSessionWebSocketDelegate.didOpenWithProtocol` callback may not be firing, causing setup message to never send.
+
+**Asset inventory (all present in bundle):**
+- `UtamaAI/Assets/Models/`: utama.usdz (29MB), lion.usdz (14MB)
+- `UtamaAI/Assets/Animations/`: 8 USDZ files (utama_talking, utama_gesture, utama_bow, utama_dance, lion_roar, lion_walk, lion_run, lion_resting)
+- `UtamaAI/Assets/Audio/`: lion_roar.wav, ambient_shore.wav, spawn_shimmer.wav, transition_whoosh.wav
+- `UtamaAI/Assets/Video/`: lion_encounter_vr.mp4 (35MB, 1920×1080, H.264, 14.6s)
+
+Detailed bug reproduction, root cause analysis, and fix instructions are in `HANDOFF.md`.
 
 ### TRACK A: iOS App Foundation
 

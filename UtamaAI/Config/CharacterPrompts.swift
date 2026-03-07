@@ -8,7 +8,7 @@ struct CharacterPersona: Sendable {
 }
 
 enum CharacterPrompts {
-    static let modelId = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    static let modelId = "models/gemini-2.5-flash-native-audio-latest"
 
     static let voiceOptions = ["Charon", "Orus", "Sadaltager"]
 
@@ -73,6 +73,9 @@ enum CharacterPrompts {
     )
 
     static var apiKey: String {
-        ProcessInfo.processInfo.environment["GOOGLE_API_KEY"] ?? ""
+        // Support both env var names — .env file uses GEMINI_API_KEY
+        ProcessInfo.processInfo.environment["GOOGLE_API_KEY"]
+            ?? ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
+            ?? ""
     }
 }

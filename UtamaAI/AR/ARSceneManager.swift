@@ -16,7 +16,6 @@ final class ARSceneManager: NSObject, ObservableObject {
 
     private var coachingOverlay: ARCoachingOverlayView?
     private var cameraFacingTimer: Timer?
-    private var hasAttemptedPlacement = false
 
     override init() {
         super.init()
@@ -112,7 +111,7 @@ final class ARSceneManager: NSObject, ObservableObject {
     private func handlePlaneAnchor(_ planeAnchor: ARPlaneAnchor) {
         guard planeAnchor.alignment == .horizontal else { return }
 
-        let planeArea = planeAnchor.extent.x * planeAnchor.extent.z
+        let planeArea = planeAnchor.planeExtent.width * planeAnchor.planeExtent.height
         guard planeArea >= 0.5 else { return }
 
         if !isPlaneDetected {
@@ -120,10 +119,8 @@ final class ARSceneManager: NSObject, ObservableObject {
             coordinator?.onPlaneDetected()
         }
 
-        guard !hasAttemptedPlacement, !areCharactersPlaced else { return }
-        hasAttemptedPlacement = true
-
-        placeCharacters(at: planeAnchor.transform)
+        // Do not auto-place on plane detection.
+        // Placement is explicit via user tap to avoid spawning off-screen.
     }
 
     private func placeCharacters(at worldTransform: simd_float4x4) {

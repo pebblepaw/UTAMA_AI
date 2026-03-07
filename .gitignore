@@ -13,3 +13,11 @@ build/
 **/xcuserdata/
 **/project.xcworkspace/xcuserdata/
 **/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Source asset directories (large files, not needed for build)
+LIONASSETS/
+SULTANASSETS/
+VIDEO/
+
+# Draft video files
+UtamaAI/Assets/Video/Generated*

@@ -5,29 +5,36 @@ import Foundation
 final class AppCoordinator: NSObject, ObservableObject {
     @Published var appState: AppState = .scanning
     @Published var isListening: Bool = false
-    @Published var currentTranscript: String?
-    @Published var subtitleText: String?
+    @Published var isMicMuted: Bool = false
     @Published var micIndicatorState: MicIndicatorState = .idle
     @Published var isGeminiConnected: Bool = false
     @Published var lastErrorMessage: String?
 
     let animationSyncManager: AnimationSyncManager
+    let vrScenePlayer: VRScenePlayer
 
     private let geminiSession: GeminiLiveSession
     private let audioCaptureEngine: AudioCaptureEngine
     private let audioStreamPlayer: AudioStreamPlayer
 
     private weak var arSceneManager: ARSceneManager?
-    private var subtitleHideWorkItem: DispatchWorkItem?
     private var pendingInitialGreeting = true
-    private var lionRoarPlayer: AVAudioPlayer?
+    private var transitionWhooshPlayer: AVAudioPlayer?
+    private var sentAudioChunkCount = 0
 
     init(apiKey: String = CharacterPrompts.apiKey) {
         geminiSession = GeminiLiveSession(apiKey: apiKey)
         audioCaptureEngine = AudioCaptureEngine()
+
+        // Configure audio session BEFORE creating AudioStreamPlayer (which starts its AVAudioEngine)
+        Self.configureInitialAudioSession()
+
         audioStreamPlayer = AudioStreamPlayer()
         animationSyncManager = AnimationSyncManager()
+        vrScenePlayer = VRScenePlayer()
         super.init()
+
+        print("[AppCoordinator] API key present: \(!geminiSession.apiKey.isEmpty), length: \(geminiSession.apiKey.count)")
 
         geminiSession.delegate = self
         audioCaptureEngine.delegate = self
@@ -40,15 +47,16 @@ final class AppCoordinator: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self?.micIndicatorState = .listening
                 self?.isListening = true
-                self?.scheduleSubtitleHideAfterTurn()
             }
         }
 
-        animationSyncManager.onLionRoarRequested = { [weak self] in
-            self?.playLionRoarSFX()
+        vrScenePlayer.onComplete = { [weak self] in
+            self?.onVRComplete()
         }
 
-        configureAudioSessionForVoice()
+        // Pre-load VR video so it starts instantly
+        vrScenePlayer.preload()
+        // Audio session already configured via Self.configureInitialAudioSession() above
     }
 
     deinit {
@@ -81,24 +89,46 @@ final class AppCoordinator: NSObject, ObservableObject {
         DispatchQueue.main.async {
             guard self.appState == .conversing else { return }
             self.appState = .vrTransition
+
+            // Stop audio pipeline during VR
             self.audioStreamPlayer.stop()
+            self.audioCaptureEngine.stopCapture()
             self.isListening = false
             self.micIndicatorState = .idle
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Play transition whoosh SFX
+            self.playTransitionWhooshSFX()
+
+            // After fade-to-black animation (1 second), start video
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.appState = .vrPlaying
+                self.vrScenePlayer.play()
             }
         }
     }
 
     func onVRComplete() {
         DispatchQueue.main.async {
+            self.vrScenePlayer.stop()
             self.appState = .vrReturn
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.appState = .conversing
+                self.configureAudioSessionForVoice()
+
+                do {
+                    try self.audioCaptureEngine.startCapture()
+                } catch {
+                    self.onError(error)
+                }
+
                 self.isListening = true
                 self.micIndicatorState = .listening
-                self.geminiSession.sendText("You just showed the traveler the vision of your lion encounter. Continue the conversation.")
+
+                // Send context to Gemini so it picks up naturally after the VR scene
+                self.geminiSession.sendText(
+                    "You just showed the traveler the vision of your lion encounter. Continue the conversation."
+                )
             }
         }
     }
@@ -143,69 +173,61 @@ final class AppCoordinator: NSObject, ObservableObject {
         }
     }
 
+    func toggleMicMute() {
+        DispatchQueue.main.async {
+            self.isMicMuted.toggle()
+            self.isListening = !self.isMicMuted
+            if self.micIndicatorState != .aiSpeaking {
+                self.micIndicatorState = self.isMicMuted ? .idle : .listening
+            }
+        }
+    }
+
     private func configureAudioSessionForVoice() {
+        Self.configureInitialAudioSession()
+    }
+
+    private static func configureInitialAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.defaultToSpeaker, .allowBluetooth]
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try session.setActive(true)
         } catch {
-            onError(error)
+            print("[AppCoordinator] \u{26a0}\u{fe0f} Audio session config failed: \(error)")
         }
     }
 
     private func handleModelText(_ text: String) {
         var cleanedText = text
 
-        if cleanedText.contains("[LION_ROAR]") {
-            cleanedText = cleanedText.replacingOccurrences(of: "[LION_ROAR]", with: "")
-            animationSyncManager.triggerLionRoar()
-        }
-
         if cleanedText.contains("[VR_SCENE]") {
             cleanedText = cleanedText.replacingOccurrences(of: "[VR_SCENE]", with: "")
             onVRTrigger()
         }
-
-        DispatchQueue.main.async {
-            self.subtitleHideWorkItem?.cancel()
-            let trimmed = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.subtitleText = trimmed.isEmpty ? nil : trimmed
-        }
     }
 
-    private func scheduleSubtitleHideAfterTurn() {
-        subtitleHideWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.subtitleText = nil
-        }
-        subtitleHideWorkItem = workItem
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
-    }
-
-    private func playLionRoarSFX() {
+    private func playTransitionWhooshSFX() {
         guard let url = Bundle.main.url(
-            forResource: "lion_roar",
-            withExtension: "wav"
-        ) ?? Bundle.main.url(
-            forResource: "lion_roar",
+            forResource: "transition_whoosh",
             withExtension: "wav",
             subdirectory: "Assets/Audio"
+        ) ?? Bundle.main.url(
+            forResource: "transition_whoosh",
+            withExtension: "wav"
         ) else {
             return
         }
 
         do {
-            lionRoarPlayer = try AVAudioPlayer(contentsOf: url)
-            lionRoarPlayer?.prepareToPlay()
-            lionRoarPlayer?.play()
+            transitionWhooshPlayer = try AVAudioPlayer(contentsOf: url)
+            transitionWhooshPlayer?.prepareToPlay()
+            transitionWhooshPlayer?.play()
         } catch {
-            onError(error)
+            // Non-critical — transition continues without SFX
         }
     }
 }
@@ -229,6 +251,7 @@ extension AppCoordinator: GeminiSessionDelegate {
             self.isListening = false
             self.micIndicatorState = .idle
         }
+        audioStreamPlayer.stop()
 
         if let error {
             onError(error)
@@ -240,16 +263,19 @@ extension AppCoordinator: GeminiSessionDelegate {
 
         DispatchQueue.main.async {
             self.micIndicatorState = .aiSpeaking
-            self.isListening = false
+            // Keep mic capture active to support interruption/barge-in.
+            self.isListening = true
         }
     }
 
     func didReceiveTranscription(_ text: String, isUser: Bool) {
-        DispatchQueue.main.async {
-            self.currentTranscript = text
-        }
-
         if isUser {
+            let normalized = text.lowercased()
+            if normalized.contains("show me") || normalized.contains("show what happened")
+                || normalized.contains("take me back") || normalized.contains("show the scene")
+            {
+                onVRTrigger()
+            }
             return
         }
 
@@ -268,7 +294,11 @@ extension AppCoordinator: GeminiSessionDelegate {
 
 extension AppCoordinator: AudioCaptureDelegate {
     func didCapturePCMData(_ data: Data) {
-        guard appState == .conversing, isListening else { return }
+        guard appState == .conversing, !isMicMuted, isGeminiConnected else { return }
+        sentAudioChunkCount += 1
+        if sentAudioChunkCount % 20 == 0 {
+            print("[AppCoordinator] sent mic audio chunks: \(sentAudioChunkCount)")
+        }
         geminiSession.sendAudio(data)
     }
 }
