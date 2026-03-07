@@ -1,1 +1,15 @@
 .env
+.env.*
+
+# macOS
+.DS_Store
+
+# Xcode build artifacts
+DerivedData/
+build/
+
+# Xcode user-specific files (do not track)
+*.xcuserstate
+**/xcuserdata/
+**/project.xcworkspace/xcuserdata/
+**/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
