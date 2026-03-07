@@ -10,6 +10,7 @@ Utama AI brings Singapore's founding legend to life. Point your iPhone at any su
 
 ## Demo
 
+[![Watch the demo](VIDEO/THUMBNAIL.png)](https://www.youtube.com/watch?v=f3ol2L_EAtY)
 
 ---
 
