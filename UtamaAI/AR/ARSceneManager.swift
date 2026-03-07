@@ -16,6 +16,7 @@ final class ARSceneManager: NSObject, ObservableObject {
 
     private var coachingOverlay: ARCoachingOverlayView?
     private var cameraFacingTimer: Timer?
+    private var hasAttemptedPlacement = false
 
     override init() {
         super.init()
@@ -96,9 +97,11 @@ final class ARSceneManager: NSObject, ObservableObject {
         guard let arView, !areCharactersPlaced else { return }
 
         let location = gesture.location(in: arView)
-        let raycastResults = arView.raycast(from: location, allowing: .estimatedPlane, alignment: .horizontal)
+        let strictResults = arView.raycast(from: location, allowing: .existingPlaneGeometry, alignment: .horizontal)
+        let infiniteResults = arView.raycast(from: location, allowing: .existingPlaneInfinite, alignment: .horizontal)
+        let estimatedResults = arView.raycast(from: location, allowing: .estimatedPlane, alignment: .horizontal)
 
-        guard let firstResult = raycastResults.first else { return }
+        guard let firstResult = strictResults.first ?? infiniteResults.first ?? estimatedResults.first else { return }
 
         if !isPlaneDetected {
             isPlaneDetected = true
@@ -119,19 +122,46 @@ final class ARSceneManager: NSObject, ObservableObject {
             coordinator?.onPlaneDetected()
         }
 
-        // Do not auto-place on plane detection.
-        // Placement is explicit via user tap to avoid spawning off-screen.
+        // Auto-place once for faster demo startup, then lock to avoid duplicates.
+        guard !hasAttemptedPlacement else { return }
+        hasAttemptedPlacement = true
+        placeCharacters(at: planeAnchor.transform)
     }
 
     private func placeCharacters(at worldTransform: simd_float4x4) {
         guard let arView else { return }
 
-        let anchor = AnchorEntity(world: worldTransform)
+        let placementTransform = adjustedPlacementTransform(fallback: worldTransform, arView: arView)
+        let anchor = AnchorEntity(world: placementTransform)
         arView.scene.addAnchor(anchor)
         characterManager.placeCharacters(on: anchor)
 
         // Align both characters to face the user camera once at placement time.
         characterManager.faceCharactersTowardCamera(using: arView, smooth: false)
+    }
+
+    private func adjustedPlacementTransform(fallback worldTransform: simd_float4x4, arView: ARView) -> simd_float4x4 {
+        guard let cameraTransform = arView.session.currentFrame?.camera.transform else {
+            return worldTransform
+        }
+
+        let planeY = worldTransform.columns.3.y
+        let cameraPosition = SIMD3<Float>(cameraTransform.columns.3.x, cameraTransform.columns.3.y, cameraTransform.columns.3.z)
+        var forward = SIMD3<Float>(-cameraTransform.columns.2.x, 0, -cameraTransform.columns.2.z)
+        let forwardLength = simd_length(forward)
+        guard forwardLength > 0.001 else { return worldTransform }
+        forward /= forwardLength
+
+        let spawnDistance: Float = 1.35
+        let spawnPosition = SIMD3<Float>(
+            cameraPosition.x + forward.x * spawnDistance,
+            planeY,
+            cameraPosition.z + forward.z * spawnDistance
+        )
+
+        var transform = matrix_identity_float4x4
+        transform.columns.3 = SIMD4<Float>(spawnPosition.x, spawnPosition.y, spawnPosition.z, 1)
+        return transform
     }
 
     private func startCameraFacingUpdates() {

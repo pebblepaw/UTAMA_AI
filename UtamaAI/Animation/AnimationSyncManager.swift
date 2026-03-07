@@ -9,8 +9,8 @@ private enum AnimationState {
 final class AnimationSyncManager {
     weak var characterManager: CharacterManager?
 
-    let talkingThreshold: Float = 0.05
-    let idleThreshold: Float = 0.02
+    let talkingThreshold: Float = 0.015
+    let idleThreshold: Float = 0.007
 
     var onLionRoarRequested: (() -> Void)?
 
@@ -39,6 +39,14 @@ final class AnimationSyncManager {
         activeStates[.lion] = .roaring
         characterManager?.playRoarAnimation()
         onLionRoarRequested?()
+    }
+
+    func triggerUtamaGesture() {
+        characterManager?.playGestureAnimation(for: .utama)
+    }
+
+    func triggerUtamaDance() {
+        characterManager?.playDanceAnimation(for: .utama)
     }
 
     private func scheduleIdleTransition(for character: Character) {

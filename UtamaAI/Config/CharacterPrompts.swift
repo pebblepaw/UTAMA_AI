@@ -73,9 +73,6 @@ enum CharacterPrompts {
     )
 
     static var apiKey: String {
-        // Support both env var names — .env file uses GEMINI_API_KEY
-        ProcessInfo.processInfo.environment["GOOGLE_API_KEY"]
-            ?? ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
-            ?? ""
+        LocalSecrets.geminiAPIKey
     }
 }

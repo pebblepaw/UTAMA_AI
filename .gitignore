@@ -21,3 +21,6 @@ VIDEO/
 
 # Draft video files
 UtamaAI/Assets/Video/Generated*
+
+# Local secrets
+UtamaAI/UtamaAI/Config/LocalSecrets.swift

@@ -141,13 +141,6 @@ final class GeminiLiveSession: NSObject {
                 "outputAudioTranscription": [:],
                 "systemInstruction": [
                     "parts": [["text": persona.systemPrompt]]
-                ],
-                "realtimeInputConfig": [
-                    "automaticActivityDetection": [
-                        "disabled": false,
-                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW"
-                    ]
                 ]
             ]
         ]
@@ -375,7 +368,13 @@ extension GeminiLiveSession: URLSessionWebSocketDelegate {
         reason: Data?
     ) {
         guard webSocketTask == webSocket else { return }
-        print("[GeminiLive] WebSocket closed: \(closeCode)")
+        let reasonText: String
+        if let reason, !reason.isEmpty {
+            reasonText = String(data: reason, encoding: .utf8) ?? "<binary>"
+        } else {
+            reasonText = "<none>"
+        }
+        print("[GeminiLive] WebSocket closed: \(closeCode), reason: \(reasonText)")
         workQueue.async {
             if !self.didDisconnectManually {
                 self.handleSocketFailure(GeminiLiveError.timeout)

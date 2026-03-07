@@ -20,6 +20,9 @@ final class CharacterManager: ObservableObject {
     private var targetScales: [Character: SIMD3<Float>] = [:]
     private var baseOrientationOffsets: [Character: simd_quatf] = [:]
     private var spawnSFXPlayer: AVAudioPlayer?
+    private var utamaVariantPrototypes: [String: Entity] = [:]
+    private var currentUtamaVariantKey: String = "idle"
+    private var lionMotionWorkItem: DispatchWorkItem?
 
     /// Pre-loaded animations keyed by character, then by keyword (e.g. "talk", "roar").
     private var extraAnimations: [Character: [String: AnimationResource]] = [
@@ -43,6 +46,14 @@ final class CharacterManager: ObservableObject {
         ]
     ]
 
+    private let utamaVariantFiles: [String: (subdirectory: String, fileName: String)] = [
+        "idle": ("Assets/Models", "utama"),
+        "talk": ("Assets/Animations", "utama_talking"),
+        "gesture": ("Assets/Animations", "utama_gesture"),
+        "bow": ("Assets/Animations", "utama_bow"),
+        "dance": ("Assets/Animations", "utama_dance")
+    ]
+
     func loadCharacters() {
         if utamaEntity == nil {
             utamaEntity = loadCharacterEntity(
@@ -54,12 +65,23 @@ final class CharacterManager: ObservableObject {
             print("[CharacterManager] utamaEntity loaded, children: \(utamaEntity?.children.count ?? 0)")
             preloadAnimations(for: .utama)
         }
+
+        if lionEntity == nil {
+            lionEntity = loadCharacterEntity(
+                named: "lion",
+                fallbackMesh: .generateSphere(radius: 0.2),
+                fallbackColor: .systemOrange
+            )
+            lionEntity?.name = "lion"
+            print("[CharacterManager] lionEntity loaded, children: \(lionEntity?.children.count ?? 0)")
+            preloadAnimations(for: .lion)
+        }
     }
 
     /// Load animation resources from separate USDZ files into memory.
     private func preloadAnimations(for character: Character) {
-        // Utama animation USDZs have incompatible bind paths for this runtime rig.
         if character == .utama {
+            preloadUtamaVariants()
             return
         }
         guard let files = animationFiles[character] else { return }
@@ -90,23 +112,38 @@ final class CharacterManager: ObservableObject {
     func placeCharacters(on anchor: AnchorEntity) {
         loadCharacters()
 
-        guard let utamaEntity else { return }
+        guard let utamaEntity, let lionEntity else { return }
 
         if utamaEntity.parent == nil {
             anchor.addChild(utamaEntity)
         }
+        if lionEntity.parent == nil {
+            anchor.addChild(lionEntity)
+        }
 
+        // Local anchor coordinates: Sultan at origin, lion offset to the right.
         utamaEntity.position = [0, 0, 0]
-        scaleEntity(utamaEntity, toApproximateHeight: 1.1, for: .utama)
+        lionEntity.position = [0.35, 0, 0.35]
+        scaleEntity(utamaEntity, toApproximateHeight: 1.2, for: .utama)
+        scaleEntity(lionEntity, toApproximateHeight: 0.55, for: .lion)
         applyGroundAlignment(to: utamaEntity, for: .utama)
+        applyGroundAlignment(to: lionEntity, for: .lion)
         applyBaseOrientationOffsets()
 
         spawnCharacter(.utama, on: anchor)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.spawnCharacter(.lion, on: anchor)
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self else { return }
-            self.playIdleAnimation(for: .utama)
-            self.onCharactersPlaced?()
+            self.playGestureAnimation(for: .utama)
+            self.playIdleAnimation(for: .lion)
+            self.startLionAmbientMotionLoop()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                self.playIdleAnimation(for: .utama)
+                self.onCharactersPlaced?()
+            }
         }
     }
 
@@ -168,6 +205,15 @@ final class CharacterManager: ObservableObject {
         }
     }
 
+    func playDanceAnimation(for character: Character) {
+        animationStates[character] = .gesturing
+        playAnimation(for: character, namedLike: ["dance", "run", "walk", "gesture"])
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            self?.playIdleAnimation(for: character)
+        }
+    }
+
     func transitionAnimation(from: CharacterAnimationState, to: CharacterAnimationState, duration: TimeInterval) {
         // TODO: Extend with explicit per-entity blend trees when production animation clips are available.
         for character in Character.allCases {
@@ -223,12 +269,22 @@ final class CharacterManager: ObservableObject {
     private func playAnimation(for character: Character, namedLike keywords: [String]) {
         guard let entity = entity(for: character) else { return }
 
+        let transitionDuration: TimeInterval = keywords.contains(where: {
+            let lower = $0.lowercased()
+            return lower.contains("talk") || lower.contains("speak")
+        }) ? 0.65 : 0.35
+
+        if character == .utama {
+            let key = utamaVariantKey(for: keywords)
+            switchUtamaVariant(to: key)
+            return
+        }
+
         // 1. Check pre-loaded extra animations from separate USDZ files
-        // Avoid for Utama due to bind-point mismatch logs on device.
-        if character != .utama, let extras = extraAnimations[character] {
+        if let extras = extraAnimations[character] {
             for keyword in keywords {
                 if let animation = extras[keyword] {
-                    _ = entity.playAnimation(animation, transitionDuration: 0.3, startsPaused: false)
+                    _ = entity.playAnimation(animation, transitionDuration: transitionDuration, startsPaused: false)
                     return
                 }
             }
@@ -236,14 +292,92 @@ final class CharacterManager: ObservableObject {
 
         // 2. Check animations embedded in the base model
         if let matched = matchedAnimation(in: entity, keywords: keywords) {
-            _ = entity.playAnimation(matched, transitionDuration: 0.3, startsPaused: false)
+            _ = entity.playAnimation(matched, transitionDuration: transitionDuration, startsPaused: false)
             return
         }
 
         // 3. Fallback to first available animation
         if let fallback = entity.availableAnimations.first {
-            _ = entity.playAnimation(fallback, transitionDuration: 0.3, startsPaused: false)
+            _ = entity.playAnimation(fallback, transitionDuration: transitionDuration, startsPaused: false)
+            return
         }
+
+        // 4. Procedural fallback when no animation clips are available/match.
+        playProceduralFallbackAnimation(on: entity, for: character, keywords: keywords)
+    }
+
+    private func preloadUtamaVariants() {
+        for (key, descriptor) in utamaVariantFiles {
+            guard
+                let url = Bundle.main.url(
+                    forResource: descriptor.fileName,
+                    withExtension: "usdz",
+                    subdirectory: descriptor.subdirectory
+                ),
+                let loaded = try? Entity.load(contentsOf: url)
+            else {
+                continue
+            }
+            utamaVariantPrototypes[key] = loaded
+        }
+    }
+
+    private func utamaVariantKey(for keywords: [String]) -> String {
+        let lower = keywords.joined(separator: ",").lowercased()
+        if lower.contains("dance") {
+            return "dance"
+        }
+        if lower.contains("bow") {
+            return "bow"
+        }
+        if lower.contains("gesture") || lower.contains("point") {
+            return "gesture"
+        }
+        if lower.contains("talk") || lower.contains("speak") {
+            return "talk"
+        }
+        return "idle"
+    }
+
+    private func switchUtamaVariant(to key: String) {
+        guard key != currentUtamaVariantKey else { return }
+        guard
+            let current = utamaEntity,
+            let parent = current.parent,
+            let prototype = utamaVariantPrototypes[key]
+        else {
+            return
+        }
+
+        let next = prototype.clone(recursive: true)
+        next.name = "utama"
+        next.transform = current.transform
+
+        current.removeFromParent()
+        parent.addChild(next)
+        utamaEntity = next
+        currentUtamaVariantKey = key
+
+        if let animation = next.availableAnimations.first {
+            _ = next.playAnimation(animation, transitionDuration: 0.15, startsPaused: false)
+        }
+    }
+
+    private func startLionAmbientMotionLoop() {
+        lionMotionWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.playAnimation(for: .lion, namedLike: self.randomLionMotionKeywords())
+            self.startLionAmbientMotionLoop()
+        }
+        lionMotionWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2, execute: workItem)
+    }
+
+    private func randomLionMotionKeywords() -> [String] {
+        let options: [[String]] = [["walk"], ["run"], ["rest"], ["roar"]]
+        return options.randomElement() ?? ["walk"]
     }
 
     private func matchedAnimation(in entity: Entity, keywords: [String]) -> AnimationResource? {
@@ -252,6 +386,63 @@ final class CharacterManager: ObservableObject {
         return entity.availableAnimations.first { animation in
             let animationName = (animation.name ?? "").lowercased()
             return normalizedKeywords.contains(where: { animationName.contains($0) })
+        }
+    }
+
+    private func playProceduralFallbackAnimation(on entity: Entity, for character: Character, keywords: [String]) {
+        let keywordString = keywords.joined(separator: ",")
+        let lower = keywordString.lowercased()
+
+        if lower.contains("talk") || lower.contains("speak") {
+            // Gentle talking motion: tiny bob on Y.
+            var up = entity.transform
+            up.translation.y += 0.02
+            entity.move(to: up, relativeTo: entity.parent, duration: 0.22, timingFunction: .easeInOut)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                var down = entity.transform
+                down.translation.y -= 0.02
+                entity.move(to: down, relativeTo: entity.parent, duration: 0.22, timingFunction: .easeInOut)
+            }
+            return
+        }
+
+        if lower.contains("gesture") || lower.contains("point") || lower.contains("bow") {
+            var turn = entity.transform
+            turn.rotation = turn.rotation * simd_quatf(angle: .pi / 18, axis: SIMD3<Float>(0, 1, 0))
+            entity.move(to: turn, relativeTo: entity.parent, duration: 0.25, timingFunction: .easeInOut)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                var back = entity.transform
+                back.rotation = back.rotation * simd_quatf(angle: -.pi / 18, axis: SIMD3<Float>(0, 1, 0))
+                entity.move(to: back, relativeTo: entity.parent, duration: 0.25, timingFunction: .easeInOut)
+            }
+            return
+        }
+
+        if lower.contains("dance") || lower.contains("run") || lower.contains("walk") {
+            var spin = entity.transform
+            spin.rotation = spin.rotation * simd_quatf(angle: .pi / 8, axis: SIMD3<Float>(0, 1, 0))
+            entity.move(to: spin, relativeTo: entity.parent, duration: 0.35, timingFunction: .easeInOut)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                var spinBack = entity.transform
+                spinBack.rotation = spinBack.rotation * simd_quatf(angle: -.pi / 8, axis: SIMD3<Float>(0, 1, 0))
+                entity.move(to: spinBack, relativeTo: entity.parent, duration: 0.35, timingFunction: .easeInOut)
+            }
+            return
+        }
+
+        if character == .lion || lower.contains("roar") {
+            var lunge = entity.transform
+            lunge.translation.z -= 0.08
+            entity.move(to: lunge, relativeTo: entity.parent, duration: 0.18, timingFunction: .easeInOut)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                var reset = entity.transform
+                reset.translation.z += 0.08
+                entity.move(to: reset, relativeTo: entity.parent, duration: 0.18, timingFunction: .easeInOut)
+            }
         }
     }
 
@@ -276,10 +467,16 @@ final class CharacterManager: ObservableObject {
     }
 
     private func applyGroundAlignment(to entity: Entity, for character: Character) {
-        let bounds = entity.visualBounds(relativeTo: nil)
+        let bounds = entity.visualBounds(relativeTo: entity)
         let minY = bounds.center.y - (bounds.extents.y * 0.5)
-        // Nudge slightly downward so feet visually meet real ground.
-        let verticalOffset = -minY - 0.08
+        // Force a stable baseline for Utama; rig bounds are inconsistent across exports.
+        let verticalOffset: Float
+        if character == .utama {
+            verticalOffset = -0.12
+        } else {
+            let rawOffset = -minY - 0.03
+            verticalOffset = min(max(rawOffset, -0.25), 0.25)
+        }
         entity.position.y = verticalOffset
         print("[CharacterManager] \(character) bounds centerY=\(bounds.center.y) height=\(bounds.extents.y) minY=\(minY) yOffset=\(verticalOffset)")
     }

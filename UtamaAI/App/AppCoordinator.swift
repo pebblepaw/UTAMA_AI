@@ -5,7 +5,7 @@ import Foundation
 final class AppCoordinator: NSObject, ObservableObject {
     @Published var appState: AppState = .scanning
     @Published var isListening: Bool = false
-    @Published var isMicMuted: Bool = false
+    @Published var isMicMuted: Bool = true
     @Published var micIndicatorState: MicIndicatorState = .idle
     @Published var isGeminiConnected: Bool = false
     @Published var lastErrorMessage: String?
@@ -21,6 +21,7 @@ final class AppCoordinator: NSObject, ObservableObject {
     private var pendingInitialGreeting = true
     private var transitionWhooshPlayer: AVAudioPlayer?
     private var sentAudioChunkCount = 0
+    private var completedTurnCount = 0
 
     init(apiKey: String = CharacterPrompts.apiKey) {
         geminiSession = GeminiLiveSession(apiKey: apiKey)
@@ -45,8 +46,9 @@ final class AppCoordinator: NSObject, ObservableObject {
 
         audioStreamPlayer.onPlaybackComplete = { [weak self] in
             DispatchQueue.main.async {
-                self?.micIndicatorState = .listening
-                self?.isListening = true
+                guard let self else { return }
+                self.isListening = !self.isMicMuted
+                self.micIndicatorState = self.isMicMuted ? .idle : .listening
             }
         }
 
@@ -117,13 +119,15 @@ final class AppCoordinator: NSObject, ObservableObject {
                 self.configureAudioSessionForVoice()
 
                 do {
-                    try self.audioCaptureEngine.startCapture()
+                    if !self.isMicMuted {
+                        try self.audioCaptureEngine.startCapture()
+                    }
                 } catch {
                     self.onError(error)
                 }
 
-                self.isListening = true
-                self.micIndicatorState = .listening
+                self.isListening = !self.isMicMuted
+                self.micIndicatorState = self.isMicMuted ? .idle : .listening
 
                 // Send context to Gemini so it picks up naturally after the VR scene
                 self.geminiSession.sendText(
@@ -152,10 +156,12 @@ final class AppCoordinator: NSObject, ObservableObject {
         geminiSession.connect(persona: CharacterPrompts.sangNilaUtama)
 
         do {
-            try audioCaptureEngine.startCapture()
+            if !isMicMuted {
+                try audioCaptureEngine.startCapture()
+            }
             DispatchQueue.main.async {
-                self.isListening = true
-                self.micIndicatorState = .listening
+                self.isListening = !self.isMicMuted
+                self.micIndicatorState = self.isMicMuted ? .idle : .listening
             }
         } catch {
             onError(error)
@@ -177,8 +183,18 @@ final class AppCoordinator: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.isMicMuted.toggle()
             self.isListening = !self.isMicMuted
-            if self.micIndicatorState != .aiSpeaking {
-                self.micIndicatorState = self.isMicMuted ? .idle : .listening
+            self.micIndicatorState = self.isMicMuted ? .idle : .listening
+
+            guard self.appState == .conversing else { return }
+
+            do {
+                if self.isMicMuted {
+                    self.audioCaptureEngine.stopCapture()
+                } else {
+                    try self.audioCaptureEngine.startCapture()
+                }
+            } catch {
+                self.onError(error)
             }
         }
     }
@@ -192,8 +208,8 @@ final class AppCoordinator: NSObject, ObservableObject {
         do {
             try session.setCategory(
                 .playAndRecord,
-                mode: .voiceChat,
-                options: [.defaultToSpeaker, .allowBluetoothHFP]
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetooth]
             )
             try session.setActive(true)
         } catch {
@@ -203,6 +219,21 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     private func handleModelText(_ text: String) {
         var cleanedText = text
+
+        if cleanedText.contains("[LION_ROAR]") {
+            cleanedText = cleanedText.replacingOccurrences(of: "[LION_ROAR]", with: "")
+            animationSyncManager.triggerLionRoar()
+        }
+
+        if cleanedText.contains("[DANCE]") {
+            cleanedText = cleanedText.replacingOccurrences(of: "[DANCE]", with: "")
+            animationSyncManager.triggerUtamaDance()
+        } else if cleanedText.contains("[GESTURE]") || cleanedText.contains("[POINT]") {
+            cleanedText = cleanedText
+                .replacingOccurrences(of: "[GESTURE]", with: "")
+                .replacingOccurrences(of: "[POINT]", with: "")
+            animationSyncManager.triggerUtamaGesture()
+        }
 
         if cleanedText.contains("[VR_SCENE]") {
             cleanedText = cleanedText.replacingOccurrences(of: "[VR_SCENE]", with: "")
@@ -236,7 +267,7 @@ extension AppCoordinator: GeminiSessionDelegate {
     func sessionDidConnect() {
         DispatchQueue.main.async {
             self.isGeminiConnected = true
-            self.micIndicatorState = .listening
+            self.micIndicatorState = self.isMicMuted ? .idle : .listening
 
             if self.pendingInitialGreeting {
                 self.pendingInitialGreeting = false
@@ -259,6 +290,7 @@ extension AppCoordinator: GeminiSessionDelegate {
     }
 
     func didReceiveAudioChunk(_ pcmData: Data) {
+        guard appState == .conversing else { return }
         audioStreamPlayer.enqueueAudioChunk(pcmData)
 
         DispatchQueue.main.async {
@@ -269,6 +301,7 @@ extension AppCoordinator: GeminiSessionDelegate {
     }
 
     func didReceiveTranscription(_ text: String, isUser: Bool) {
+        guard appState == .conversing else { return }
         if isUser {
             let normalized = text.lowercased()
             if normalized.contains("show me") || normalized.contains("show what happened")
@@ -283,9 +316,17 @@ extension AppCoordinator: GeminiSessionDelegate {
     }
 
     func didCompleteTurn() {
+        guard appState == .conversing else { return }
+        completedTurnCount += 1
+        if completedTurnCount % 3 == 0 {
+            animationSyncManager.triggerUtamaDance()
+        } else {
+            animationSyncManager.triggerUtamaGesture()
+        }
+
         DispatchQueue.main.async {
-            self.isListening = true
-            self.micIndicatorState = .listening
+            self.isListening = !self.isMicMuted
+            self.micIndicatorState = self.isMicMuted ? .idle : .listening
         }
 
         animationSyncManager.updateFromAmplitude(0, for: .utama)

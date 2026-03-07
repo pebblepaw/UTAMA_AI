@@ -9,15 +9,13 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // AR layer — hidden during VR playback
+            // AR layer stays visible; VR cinematic is an overlay panel.
 #if targetEnvironment(simulator)
             Color.black
                 .ignoresSafeArea()
-                .opacity(isVRActive ? 0 : 1)
 #else
             ARViewContainer(sceneManager: arSceneManager, appState: appCoordinator.appState)
                 .ignoresSafeArea()
-                .opacity(isVRActive ? 0 : 1)
 #endif
 
             // VR video layer
@@ -81,7 +79,7 @@ struct ContentView: View {
 
     private var isVRActive: Bool {
         switch appCoordinator.appState {
-        case .vrTransition, .vrPlaying, .vrReturn:
+        case .vrPlaying:
             return true
         default:
             return false
