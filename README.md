@@ -1,12 +1,13 @@
 # 🦁 Utama AI
+_Talk to history. In augmented reality._
 
-**Talk to history. In augmented reality.**
+Built for the Gemini 3 Singapore Hackathon.
 
-Built for the [Google Gemini API Developer Competition](https://ai.google.dev/competition) — 7 March 2026, Singapore.
+What if you could stand face-to-face with historical legends and hear the story in their own words?
 
-Utama AI brings Singapore's founding legend to life. Point your iPhone at any surface and watch Sang Nila Utama — the 13th-century Srivijayan prince who named Singapore — materialize in AR alongside his legendary lion. Have a real-time voice conversation powered by Google's Gemini Live API, trigger a lion roar, and experience an immersive VR flashback to the moment that gave Singapore its name.
+Point your iPhone at any surface and Sang Nila Utama — the 13th-century Srivijayan prince who founded Singapore — materializes before you in AR, his lion prowling at his side. Ask him anything. He'll answer, in real-time, in his own voice — powered by Google's Gemini Live API.
 
----
+Trigger a lion roar. Unlock an immersive VR flashback to the moment that gave Singapore its name.
 
 ## Demo
 
@@ -27,8 +28,6 @@ Utama AI brings Singapore's founding legend to life. Point your iPhone at any su
 - **VR Flashback Scene** — Ask the Sultan to show you the lion encounter and the app transitions into an immersive VR cinematic with gyroscope tracking
 - **Fully In-Character AI** — The Sultan stays in 13th-century persona, references the Malay Annals, and never breaks character
 
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -42,9 +41,7 @@ Utama AI brings Singapore's founding legend to life. Point your iPhone at any su
 | **Video Generation** | Google Veo 3.1 (VR flashback scene) |
 | **Build** | Xcode 26.3, iOS SDK 26.2 |
 
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 UtamaAI/
@@ -61,8 +58,6 @@ UtamaAI/
     ├── Audio/            # SFX (roar, ambient, transitions)
     └── Video/            # VR flashback MP4
 ```
-
----
 
 ## Getting Started
 
@@ -88,15 +83,9 @@ enum LocalSecrets {
 
 Open `UtamaAI.xcodeproj` in Xcode, select your device, and run.
 
----
-
-## The Story
+## Background
 
 In 1299, Prince Sang Nila Utama sailed from Palembang to the island of Temasek. During a hunting expedition, he spotted a magnificent creature — a lion. Inspired by this encounter, he named the island **Singapura** (Lion City), founding what would become modern Singapore.
-
-Utama AI lets you stand face-to-face with the prince and hear the story in his own words.
-
----
 
 ## License
 
